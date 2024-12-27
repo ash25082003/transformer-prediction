@@ -1,1 +1,2 @@
 # transformer-prediction
+This project implements a Transformer-based model for time series prediction. It uses self-attention mechanisms to capture long-term dependencies in sequential data and predicts future values based on historical trends.
