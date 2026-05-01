@@ -1,17 +1,10 @@
 import os
-import time
-import math
-import pickle
-from contextlib import nullcontext
 import random
 import pandas as pd
 import matplotlib.pyplot as plt
-from tqdm import tqdm,trange
 
 import numpy as np
 import torch
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.distributed import init_process_group, destroy_process_group
 
 from model import GPTConfig, GPT
 
@@ -33,29 +26,43 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 def get_batch():
-    
-    stocks = []
     input_dir = 'dataset/data'
-    for file in os.listdir(input_dir):
-        stocks.append(file)
-    stock = random.choice(stocks)
-    retrived = False
-    while not retrived:
-        df = pd.read_csv(os.path.join(input_dir,stock))
-        df.dropna(axis=0,inplace=True)
-        if len(df) > interval + batch_size + 1:
-            i = np.random.randint(0, len(df) - batch_size - 1-interval, 1)
-            x = torch.stack([torch.from_numpy((df[i:i+interval])[dimensions].to_numpy(dtype=np.float32)) for i in range(batch_size)])
-            y = torch.stack([
-                    torch.tensor(df.iloc[i+j+1+interval][dimensions].values[0][:1], dtype=torch.float32)
-                for j in range(batch_size)
-            ])
-            x, y = x.pin_memory().to(device, non_blocking=True), y.pin_memory().to(device, non_blocking=True)
-            retrived = True
-        else:
-            os.remove(os.path.join(input_dir,stock))
-            stock = random.choice(stocks)
-    return x,y
+    stocks = [f for f in os.listdir(input_dir) if f.endswith('.csv')]
+    if not stocks:
+        raise RuntimeError(f"No CSV files in {input_dir}")
+
+    tried = set()
+    while True:
+        remaining = [s for s in stocks if s not in tried]
+        if not remaining:
+            raise RuntimeError(
+                f"No file in {input_dir} has >= {interval + batch_size + 1} rows after dropna"
+            )
+        stock = random.choice(remaining)
+        tried.add(stock)
+
+        df = pd.read_csv(os.path.join(input_dir, stock))
+        df.dropna(axis=0, inplace=True)
+        df = df.reset_index(drop=True)
+        if len(df) <= interval + batch_size + 1:
+            continue
+
+        start = int(np.random.randint(0, len(df) - batch_size - 1 - interval))
+        feats = df[dimensions].to_numpy(dtype=np.float32)
+        target_col = dimensions.index('cl_op_t')
+
+        x = torch.stack([
+            torch.from_numpy(feats[start + j : start + j + interval])
+            for j in range(batch_size)
+        ])
+        y = torch.tensor(
+            [feats[start + j + interval, target_col] for j in range(batch_size)],
+            dtype=torch.float32,
+        ).unsqueeze(-1)
+
+        x = x.pin_memory().to(device, non_blocking=True)
+        y = y.pin_memory().to(device, non_blocking=True)
+        return x, y
 
 
 
@@ -65,18 +72,20 @@ model.to(device)
 optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
 
 
+inner_iters = 10
+outer_iters = 100
 losses = []
-for steps in range(100):
-    lossi = 0
-    for i in range(10):
-        x,y = get_batch()
-        logits, loss = model(x,y)    
+for step in range(outer_iters):
+    lossi = 0.0
+    for _ in range(inner_iters):
+        x, y = get_batch()
+        logits, loss = model(x, y)
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         optimizer.step()
         print(loss.item())
-        lossi+=loss.item()
-    losses.append(lossi/1000)
-    
+        lossi += loss.item()
+    losses.append(lossi / inner_iters)
+
 plt.plot(losses)
 plt.show()

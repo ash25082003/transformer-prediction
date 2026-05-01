@@ -7,60 +7,21 @@ import torch.nn as nn
 from torch.nn import functional as F
 
 
-def convert_to_one_hot(input_tensor,device):
-    # Create an empty tensor for the one-hot encoded output (size len(input_tensor) x 5)
-    one_hot_tensor = torch.zeros((len(input_tensor), 5))
-
-    # Iterate through each value in the input tensor
-    for i, y in enumerate(input_tensor):
-        if y > 2:
-            one_hot_tensor[i, 0] = 1
-        elif 1 < y <= 2:
-            one_hot_tensor[i, 1] = 1
-        elif 0 < y <= 1:
-            one_hot_tensor[i, 2] = 1
-        elif -1 < y <= 0:
-            one_hot_tensor[i, 3] = 1
-        else:  # y <= -1
-            one_hot_tensor[i, 4] = 1
-
-    return one_hot_tensor.to(device)
-
-
 class IndicatorEmbedder(nn.Module):
     def __init__(self, ind_dim, n_embd, num_layers=2):
-        """
-        Args:
-            input_dim (int): The number of indicators in the input column matrix.
-            n_embd (int): The number of rows in the output column matrix.
-            num_layers (int): The number of linear layers to use. Default is 1.
-        """
         super().__init__()
         self.num_layers = num_layers
-        
-        # Create a list of linear layers
         self.linears = nn.ModuleList()
-        
-        # First layer: input_dim to n_embd
         self.linears.append(nn.Linear(ind_dim, n_embd))
-        
-        # Additional layers: n_embd to n_embd
         for _ in range(num_layers - 1):
             self.linears.append(nn.Linear(n_embd, n_embd))
-        
+        self.act = nn.GELU()
+
     def forward(self, x):
-        """
-        Args:
-            x (torch.Tensor): Input column matrix of shape (batch_size, input_dim)
-        
-        Returns:
-            torch.Tensor: Transformed column matrix of shape (batch_size, n_embd, 1)
-        """
-        # Pass input through each linear layer
-        for linear in self.linears:
+        for idx, linear in enumerate(self.linears):
             x = linear(x)
-        
-        
+            if idx < len(self.linears) - 1:
+                x = self.act(x)
         return x
     
 class LayerNorm(nn.Module):
@@ -230,16 +191,10 @@ class GPT(nn.Module):
             x = block(x)
         x = self.transformer.ln_f(x) # layer normalisation after feed forward
 
+        logits = self.lm_head(x[:, -1, :])
         if targets is not None:
-            # if we are given some desired targets also calculate the loss
-            y = targets
-            logits = self.lm_head(x)
-            logits = logits[:,-1,:]   
-            print(logits[0],y[0])
-            loss = F.mse_loss(logits,y)
+            loss = F.mse_loss(logits, targets)
         else:
-            # inference-time mini-optimization: only forward the lm_head on the very last position
-            logits = self.lm_head(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
             loss = None
 
         return logits, loss

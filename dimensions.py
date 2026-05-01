@@ -45,10 +45,10 @@ class TechnicalIndicators:
     def add_date_columns(self):
         if 'Date' in self.data.columns:
             self.data['Date'] = pd.to_datetime(self.data['Date'])
-            self.data['Day'] = self.data['Date'].dt.day.astype(np.float32)/32
-            self.data['Week'] = self.data['Date'].dt.isocalendar().week.astype(np.float32)/52
-            self.data['Month'] = self.data['Date'].dt.month.astype(np.float32)/12
-            self.data['Weekday'] = self.data['Date'].dt.weekday.astype(np.float32)/8
+            self.data['Day'] = self.data['Date'].dt.day.astype(np.float32) / 31
+            self.data['Week'] = self.data['Date'].dt.isocalendar().week.astype(np.float32) / 52
+            self.data['Month'] = self.data['Date'].dt.month.astype(np.float32) / 12
+            self.data['Weekday'] = self.data['Date'].dt.weekday.astype(np.float32) / 6
         else:
             print('No "Date" column found in data.')
             
@@ -60,13 +60,16 @@ class TechnicalIndicators:
     
             
     def dropna(self):
-        self.data.dropna(axis = 1)
-        
+        self.data.dropna(axis=0, inplace=True)
+
     def min_max_volume(self):
-        try:
-            self.data["Volume"] = (self.data['Volume'] - min(self.data['Volume'])) / (max(self.data['Volume']) - min(self.data['Volume'])) *100
-        except:
-            print(self.name)
+        v = self.data['Volume'].astype(np.float32)
+        vmin, vmax = v.min(), v.max()
+        if vmax == vmin:
+            print(f"{self.name}: constant Volume, setting to 0")
+            self.data['Volume'] = np.float32(0.0)
+        else:
+            self.data['Volume'] = ((v - vmin) / (vmax - vmin) * 100).astype(np.float32)
         
     def apply_indicators(self):
         self.add_date_columns()
