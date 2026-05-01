@@ -57,7 +57,7 @@ block_size=64, ind_dim=8, pred_size=1, n_layer=6, n_head=8, n_embd=256, dropout=
 
 ## Usage
 
-Requires Python 3.9+, PyTorch ≥ 2.0 (for flash attention), pandas, numpy, ta, matplotlib, tqdm.
+Requires Python 3.9+, PyTorch ≥ 2.0 (for flash attention), pandas, numpy, ta, matplotlib.
 
 ```bash
 # 1. build feature CSVs from raw NSE data
@@ -71,8 +71,11 @@ python train.py
 
 ## Status
 
-Research / prototype. No checkpointing, no eval split, no CLI args — edit constants at the top of `train.py` to change behaviour. See "Known issues" below before running.
+Research / prototype. No checkpointing, no eval split, no CLI args — edit constants at the top of `train.py` to change behaviour.
 
-## Known issues
+## Limitations
 
-See the review notes accompanying this README — there are several bugs in `train.py` (variable shadowing, wrong loss-average divisor, dataset-file deletion on short series, broken target indexing) and dead/legacy files (`config.py`, `config/model-1.py`, unused DDP imports, debug `print` in `model.py:GPT.forward`).
+- Single-stock random sampling per batch; no train/val split.
+- Random window offset means consecutive samples in a batch overlap heavily (stride 1 within a batch).
+- `config.py` and `config/model-1.py` are legacy nanoGPT configs; not used by `train.py`.
+- Volume scaled per-file (min-max), so the same raw volume in two stocks maps to different values — fine for relative patterns, not for cross-stock magnitude comparisons.
